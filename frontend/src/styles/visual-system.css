@@ -1,0 +1,337 @@
+:root {
+  --aa-font-sans: 'IBM Plex Sans', sans-serif;
+  --aa-font-display: 'IBM Plex Sans', sans-serif;
+  --aa-font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+
+  --aa-teal-900: #064346;
+  --aa-teal-800: #0a5c5f;
+  --aa-teal-700: #0d7377;
+  --aa-teal-600: #14919b;
+  --aa-teal-100: #dff5f4;
+  --aa-teal-050: #effafa;
+
+  --aa-slate-950: #0f172a;
+  --aa-slate-800: #1e293b;
+  --aa-slate-700: #334155;
+  --aa-slate-600: #475569;
+  --aa-slate-500: #64748b;
+  --aa-slate-300: #cbd5e1;
+  --aa-slate-200: #e2e8f0;
+  --aa-slate-100: #f1f5f9;
+  --aa-slate-050: #f8fafc;
+
+  --aa-accent-blue: #355c7d;
+  --aa-accent-green: #2f855a;
+  --aa-accent-rose: #b63f5a;
+  --aa-accent-amber: #b7791f;
+
+  --aa-radius-sm: 8px;
+  --aa-radius-md: 12px;
+  --aa-radius-lg: 16px;
+  --aa-radius-xl: 22px;
+  --aa-shadow-soft: 0 10px 30px rgba(13, 115, 119, 0.10);
+}
+
+html,
+body,
+#app,
+.v-application {
+  font-family: var(--aa-font-sans) !important;
+  color: var(--aa-slate-800);
+  background:
+    radial-gradient(circle at 14% 10%, rgba(20, 145, 155, 0.12), transparent 30%),
+    radial-gradient(circle at 88% 2%, rgba(53, 92, 125, 0.10), transparent 28%),
+    linear-gradient(180deg, #f8fbfc 0%, #f3f7f9 48%, #f8fafc 100%);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+html {
+  overflow-x: hidden;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+* {
+  font-family: inherit;
+}
+
+code,
+pre,
+.field-badge,
+.footer-version {
+  font-family: var(--aa-font-mono) !important;
+}
+
+h1,
+h2,
+h3,
+.section-heading,
+.section-title,
+.nav-brand,
+.footer-brand-name,
+.gene-name-text {
+  font-family: var(--aa-font-display);
+  letter-spacing: -0.02em;
+}
+
+.v-container {
+  max-width: 1280px;
+}
+
+.aa-card,
+.data-section,
+.results-card,
+.search-frame,
+.scope-panel,
+.api-card,
+.section-card,
+.panel-box,
+.gene-header-card {
+  border-color: rgba(203, 213, 225, 0.74) !important;
+}
+
+.data-section,
+.results-card,
+.search-frame,
+.scope-panel,
+.api-card,
+.section-card,
+.panel-box,
+.gene-header-card {
+  background: #ffffff !important;
+  border: 1px solid rgba(203, 213, 225, 0.72) !important;
+  border-radius: var(--aa-radius-lg);
+}
+
+.section-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  color: var(--aa-teal-700) !important;
+  background: rgba(13, 115, 119, 0.08);
+  border: 1px solid rgba(13, 115, 119, 0.13);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-family: var(--aa-font-display);
+  font-size: 0.74rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.12em !important;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.section-heading,
+.section-title {
+  color: var(--aa-slate-900, #152238) !important;
+  line-height: 1.15;
+}
+
+.section-subtitle,
+.footer-desc,
+.guide-p,
+.step-desc,
+.dataset-card-desc,
+.api-card-subtitle {
+  color: var(--aa-slate-600) !important;
+  line-height: 1.65;
+}
+
+.v-chip {
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+}
+
+.v-field {
+  color: var(--aa-slate-800) !important;
+}
+
+.v-field__input,
+.v-select__selection-text,
+.v-autocomplete__selection-text {
+  font-family: var(--aa-font-sans) !important;
+}
+
+.v-data-table,
+.v-table {
+  color: var(--aa-slate-800) !important;
+}
+
+.v-data-table__th,
+.v-table th,
+table th {
+  font-family: var(--aa-font-display) !important;
+  font-size: 0.76rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.09em !important;
+  text-transform: uppercase !important;
+  color: var(--aa-slate-600) !important;
+  background: #f1f8f8 !important;
+  border-bottom: 1px solid rgba(13, 115, 119, 0.14) !important;
+}
+
+.v-data-table__td,
+.v-table td,
+table td {
+  color: var(--aa-slate-700);
+  border-bottom-color: rgba(203, 213, 225, 0.68) !important;
+}
+
+.v-data-table__tr:hover .v-data-table__td,
+.v-table tbody tr:hover td,
+table tbody tr:hover td {
+  background: rgba(13, 115, 119, 0.035) !important;
+}
+
+.chart-shell,
+.browser-svg-container,
+.genome-browser-wrapper {
+  background: #ffffff !important;
+  border: 1px solid rgba(203, 213, 225, 0.72);
+  border-radius: var(--aa-radius-lg);
+}
+
+.v-table__wrapper,
+.v-data-table .v-table__wrapper,
+.tx-table-container,
+.heatmap-wrap,
+.schema-table-wrapper,
+.reference-table-wrap,
+.faq-table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(13, 115, 119, 0.36) rgba(226, 232, 240, 0.55);
+  -webkit-overflow-scrolling: touch;
+}
+
+.v-table__wrapper::-webkit-scrollbar,
+.tx-table-container::-webkit-scrollbar,
+.heatmap-wrap::-webkit-scrollbar,
+.schema-table-wrapper::-webkit-scrollbar,
+.reference-table-wrap::-webkit-scrollbar,
+.faq-table-wrap::-webkit-scrollbar {
+  height: 9px;
+}
+
+.v-table__wrapper::-webkit-scrollbar-track,
+.tx-table-container::-webkit-scrollbar-track,
+.heatmap-wrap::-webkit-scrollbar-track,
+.schema-table-wrapper::-webkit-scrollbar-track,
+.reference-table-wrap::-webkit-scrollbar-track,
+.faq-table-wrap::-webkit-scrollbar-track {
+  background: rgba(226, 232, 240, 0.55);
+  border-radius: 999px;
+}
+
+.v-table__wrapper::-webkit-scrollbar-thumb,
+.tx-table-container::-webkit-scrollbar-thumb,
+.heatmap-wrap::-webkit-scrollbar-thumb,
+.schema-table-wrapper::-webkit-scrollbar-thumb,
+.reference-table-wrap::-webkit-scrollbar-thumb,
+.faq-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(13, 115, 119, 0.36);
+  border-radius: 999px;
+}
+
+.dense-view-note {
+  display: none;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid rgba(13, 115, 119, 0.16);
+  border-radius: 12px;
+  background: #f0fdfa;
+  color: var(--aa-slate-600);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.dense-view-note::before {
+  content: '↔';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(13, 115, 119, 0.10);
+  color: var(--aa-teal-700);
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+
+a.text-primary,
+.gene-name-link,
+.tx-id-link {
+  color: var(--aa-teal-700) !important;
+  text-underline-offset: 3px;
+}
+
+a.text-primary:hover,
+.gene-name-link:hover,
+.tx-id-link:hover {
+  color: var(--aa-teal-800) !important;
+}
+
+@media (max-width: 768px) {
+  .v-container {
+    padding-left: 18px !important;
+    padding-right: 18px !important;
+  }
+
+  .section-heading {
+    font-size: 1.7rem !important;
+  }
+}
+
+@media (max-width: 960px) {
+  .section-card,
+  .panel-box,
+  .gene-header-card,
+  .results-card,
+  .search-frame,
+  .scope-panel,
+  .api-card {
+    border-radius: 16px !important;
+  }
+
+  .section-title,
+  .panel-header {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .v-container {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+
+  .section-heading {
+    font-size: 1.48rem !important;
+    line-height: 1.2 !important;
+  }
+
+  .section-eyebrow {
+    font-size: 0.68rem !important;
+    letter-spacing: 0.09em !important;
+    padding: 4px 10px;
+  }
+
+  .section-card,
+  .panel-box,
+  .gene-header-card,
+  .results-card,
+  .search-frame,
+  .scope-panel,
+  .api-card {
+    border-radius: 14px !important;
+  }
+
+  .dense-view-note {
+    display: flex;
+  }
+}

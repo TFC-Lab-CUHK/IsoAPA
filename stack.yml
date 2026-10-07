@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  backend:
+    image: isoapa-backend:latest
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      CORS_ALLOWED_ORIGINS: https://isoapa.sls.cuhk.edu.hk
+      DATABASE_URL: sqlite:////app/backend/isoapa.db
+    volumes:
+      - ./backend/isoapa.db:/app/backend/isoapa.db:ro
+      - ./backend/stats_cache.json:/app/backend/stats_cache.json:ro
+      - ./data:/app/data:ro
+    networks:
+      - isoapa-internal
+    deploy:
+      replicas: 1
+      labels:
+        - traefik.enable=false
+      restart_policy:
+        condition: any
+
+  frontend:
+    image: isoapa-frontend:latest
+    volumes:
+      - ./releases:/usr/share/nginx/html/releases:ro
+    networks:
+      - isoapa-internal
+      - traefik-public
+    deploy:
+      replicas: 1
+      labels:
+        - traefik.enable=true
+        - traefik.constraint-label=traefik-public
+        - traefik.docker.network=traefik-public
+        - traefik.http.routers.isoapa-http.rule=Host(`isoapa.sls.cuhk.edu.hk`)
+        - traefik.http.routers.isoapa-http.entrypoints=http
+        - traefik.http.routers.isoapa-http.middlewares=https-redirect@docker
+        - traefik.http.routers.isoapa-https.rule=Host(`isoapa.sls.cuhk.edu.hk`)
+        - traefik.http.routers.isoapa-https.entrypoints=https
+        - traefik.http.routers.isoapa-https.tls=true
+        - traefik.http.routers.isoapa-https.tls.certresolver=le
+        - traefik.http.services.isoapa.loadbalancer.server.port=80
+      restart_policy:
+        condition: any
+
+networks:
+  isoapa-internal:
+    driver: overlay
+  traefik-public:
+    external: true

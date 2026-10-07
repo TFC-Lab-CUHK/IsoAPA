@@ -1,0 +1,11 @@
+isoapa.db
+*.db
+.data_hash
+.schema_version
+stats_cache.json
+__pycache__/
+*.py[cod]
+.git/
+.pytest_cache/
+.ruff_cache/
+data/
