@@ -1,5 +1,7 @@
 # IsoAPA
 
+**Version:** v1.0.0
+
 **IsoAPA** is a database of isoform-resolved alternative polyadenylation (APA) derived from long-read RNA sequencing. It identifies poly(A) sites (PASs) within annotated transcript contexts, enabling exploration of alternative 3′ ends used by transcripts with the same splicing pattern. The resource covers 99 species and provides sample-level read support and relative PAS usage.
 
 **Access the database:** [isoapa.sls.cuhk.edu.hk](https://isoapa.sls.cuhk.edu.hk/)
@@ -23,6 +25,10 @@ Field definitions, usage guidance and genome annotation references are available
 ## Citation
 
 Publication details will be added when available. For citation enquiries, please contact the maintainers.
+
+## License
+
+IsoAPA is distributed under the [MIT License](LICENSE).
 
 ## Contact
 
