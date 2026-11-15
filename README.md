@@ -24,7 +24,8 @@ Field definitions, usage guidance and genome annotation references are available
 
 ## Citation
 
-Publication details will be added when available. For citation enquiries, please contact the maintainers.
+Please cite:
+Jizhou Zhang, Tsz Kwan Yau, Ting-Fung Chan, IsoAPA: a multi-species long-read RNA-seq atlas of isoform-resolved alternative polyadenylation, Nucleic Acids Research, 2026;, gkag1137, https://doi.org/10.1093/nar/gkag1137
 
 ## License
 
