@@ -79,13 +79,13 @@
     <footer class="app-footer">
       <v-container style="max-width:1280px;">
         <div class="footer-grid">
-          <div class="footer-col">
+          <div class="footer-col footer-col--brand">
             <div class="footer-brand d-flex align-center mb-3">
               <IsoAPAIcon :size="18" style="color:#0D7377;" class="mr-2" />
               <span class="footer-brand-name">IsoAPA</span>
               <span class="footer-version">v1.0.0</span>
             </div>
-            <p class="footer-desc footer-desc--single-line">Isoform-level alternative polyadenylation database.</p>
+            <p class="footer-desc">Isoform-level alternative polyadenylation database.</p>
             <div class="footer-affiliations" aria-label="Institutional affiliations">
               <a
                 class="footer-affiliation-link footer-affiliation-link--cuhk"
@@ -130,8 +130,29 @@
           </div>
           <div class="footer-col">
             <h4 class="footer-heading">Contact</h4>
-            <p class="footer-desc">For questions or feedback, please contact:</p>
             <a href="mailto:tf.chan@cuhk.edu.hk" class="footer-email">tf.chan@cuhk.edu.hk</a>
+            <section class="footer-citation" aria-labelledby="footer-citation-title">
+              <h4 id="footer-citation-title" class="footer-heading">Cite IsoAPA</h4>
+              <cite class="footer-citation-title">
+                <a
+                  href="https://doi.org/10.1093/nar/gkag1137"
+                  class="footer-citation-link"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >IsoAPA: a multi-species long-read RNA-seq atlas of isoform-resolved alternative polyadenylation.</a>
+              </cite>
+              <p class="footer-citation-authors">Jizhou Zhang, Tsz Kwan Yau, and Ting-Fung Chan.</p>
+              <p class="footer-citation-meta">
+                <em>Nucleic Acids Research</em>
+                <span aria-hidden="true"> · </span>2026<span aria-hidden="true"> · </span>gkag1137
+              </p>
+              <a
+                href="https://doi.org/10.1093/nar/gkag1137"
+                class="footer-citation-link footer-citation-doi"
+                target="_blank"
+                rel="noopener noreferrer"
+              >DOI: 10.1093/nar/gkag1137<v-icon icon="mdi-arrow-top-right" size="13" aria-hidden="true"></v-icon></a>
+            </section>
           </div>
         </div>
         <div class="footer-divider"></div>
@@ -274,14 +295,25 @@ a {
     linear-gradient(180deg, rgba(248,250,252,0.86), rgba(241,245,249,0.96)),
     radial-gradient(circle at 8% 20%, rgba(13,115,119,0.08), transparent 24%);
   border-top: 1px solid rgba(13, 115, 119, 0.12);
-  padding: 48px 0 28px;
+  padding: 40px 0 24px;
 }
 
 .footer-grid {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 40px;
   margin-bottom: 32px;
+}
+
+.footer-col--brand .footer-desc {
+  max-width: 290px;
+  text-wrap: balance;
+}
+
+@media (min-width: 769px) and (max-width: 1100px) {
+  .footer-grid {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.75fr) minmax(0, 1.6fr);
+  }
 }
 
 @media (max-width: 768px) {
@@ -292,10 +324,6 @@ a {
   .footer-grid {
     grid-template-columns: 1fr;
     gap: 28px;
-  }
-
-  .footer-desc--single-line {
-    white-space: normal;
   }
 }
 
@@ -326,10 +354,6 @@ a {
   margin: 0 0 8px;
 }
 
-.footer-desc--single-line {
-  white-space: nowrap;
-}
-
 .footer-version {
   font-size: 12.5px;
   color: var(--aa-slate-500);
@@ -341,7 +365,7 @@ a {
   align-items: center;
   gap: 18px;
   width: min(500px, 100%);
-  margin-top: 22px;
+  margin-top: 24px;
 }
 
 .footer-affiliation-link {
@@ -357,6 +381,10 @@ a {
   transform: translateY(-1px);
 }
 
+.footer-affiliation-link--sls {
+  min-width: 0;
+}
+
 .footer-affiliation-logo {
   display: block;
   width: auto;
@@ -364,16 +392,17 @@ a {
 }
 
 .footer-affiliation-logo--cuhk {
-  height: 66px;
+  height: 54px;
 }
 
 .footer-affiliation-logo--sls {
-  height: 52px;
+  height: 42px;
+  max-width: 100%;
 }
 
 .footer-affiliation-divider {
   width: 1px;
-  height: 52px;
+  height: 40px;
   background: rgba(100, 116, 139, 0.34);
   flex: 0 0 auto;
 }
@@ -396,14 +425,73 @@ a {
 }
 
 .footer-email {
+  display: inline-block;
   font-size: 14.5px;
   color: var(--aa-teal-700);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .footer-email:hover {
   text-decoration: underline;
+}
+
+.footer-citation {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(13, 115, 119, 0.10);
+}
+
+.footer-citation .footer-heading {
+  margin-bottom: 10px;
+}
+
+.footer-citation-title {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 14.5px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1.5;
+  text-wrap: balance;
+  color: var(--aa-slate-700);
+}
+
+.footer-citation-authors,
+.footer-citation-meta {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--aa-slate-500);
+}
+
+.footer-citation-link {
+  color: inherit;
+  text-decoration: none;
+  text-underline-offset: 3px;
+  transition: color 150ms;
+}
+
+.footer-citation-link:hover {
+  color: var(--aa-teal-800);
+  text-decoration: underline;
+}
+
+.footer-citation-link:focus-visible {
+  outline: 2px solid var(--aa-teal-700);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.footer-citation-doi {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--aa-teal-700);
+  overflow-wrap: anywhere;
 }
 
 .footer-divider {

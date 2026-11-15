@@ -18,6 +18,10 @@ services:
       replicas: 1
       labels:
         - traefik.enable=false
+      resources:
+        limits:
+          cpus: '${ISOAPA_BACKEND_CPUS:-2.0}'
+          memory: '${ISOAPA_BACKEND_MEMORY:-2G}'
       restart_policy:
         condition: any
 

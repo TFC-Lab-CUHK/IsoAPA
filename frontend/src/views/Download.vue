@@ -41,12 +41,10 @@
           <div class="scope-label">
             <v-icon icon="mdi-earth" size="16" class="mr-1"></v-icon>
             Species Scope
+            <span class="scope-label-hint">Required</span>
           </div>
+          <p class="scope-help">Select one species for your export. Leave Samples empty to include all samples in that species.</p>
           <div class="scope-chips-row">
-            <button class="scope-chip" :class="{ active: !selectedSpecies }" @click="selectedSpecies = null">
-              <v-icon icon="mdi-database" size="14" class="mr-1"></v-icon>
-              Whole Dataset
-            </button>
             <button
               v-for="sp in speciesList"
               :key="sp.id"
@@ -66,7 +64,7 @@
           <div class="scope-label">
             <v-icon icon="mdi-flask-outline" size="16" class="mr-1"></v-icon>
             Samples
-            <span class="scope-label-hint">{{ selectedSamples.length }} selected</span>
+            <span class="scope-label-hint">{{ !selectedSpecies ? 'Optional' : selectedSamples.length ? `${selectedSamples.length} selected` : 'All samples' }}</span>
           </div>
           <v-autocomplete
             v-model="selectedSamples"
@@ -83,7 +81,8 @@
             class="sample-multi-select"
             menu-icon="mdi-chevron-down"
             :menu-props="{ contentClass: 'sample-select-menu' }"
-            placeholder="All samples"
+            :disabled="!selectedSpecies"
+            :placeholder="selectedSpecies ? 'All samples' : 'Select a species first'"
             no-data-text="No samples available"
           >
             <template #chip="{ props, item }">
@@ -128,11 +127,11 @@
       <!-- C. Download Action Panel -->
       <div v-if="selectedDataset" class="download-action-panel">
         <div class="download-action-info">
-          <div class="download-action-eyebrow">Ready to Download</div>
+          <div class="download-action-eyebrow">{{ selectedSpecies ? 'Ready to Download' : 'Select a species to continue' }}</div>
           <div class="download-action-title">
             {{ selectedDataset.title }}
             <span v-if="selectedSpecies" class="download-action-species"> · {{ selectedSpeciesLabel }}</span>
-            <span v-if="selectedSamples.length" class="download-action-species"> · {{ sampleSelectionLabel }}</span>
+            <span v-if="selectedSpecies && sampleFilterEnabled" class="download-action-species"> · {{ sampleSelectionLabel }}</span>
           </div>
           <div class="download-action-meta">
             <v-chip size="small" variant="tonal" color="primary" class="mr-2">{{ selectedFormat.toUpperCase() }}</v-chip>
@@ -141,96 +140,16 @@
         <v-btn
           size="x-large"
           class="download-btn"
-          :loading="downloading"
-          @click="triggerDownload"
+          :href="downloadUrl || undefined"
+          :download="downloadFilename"
+          :disabled="!downloadUrl"
         >
           <v-icon start icon="mdi-download"></v-icon>
           Download
         </v-btn>
       </div>
 
-      <!-- D. Versioned per-species releases -->
-      <section id="bulk-species" class="bulk-section">
-        <div class="section-eyebrow mb-2">Bulk Species Downloads</div>
-        <div class="bulk-card">
-          <div class="bulk-card-header">
-            <div>
-              <div class="bulk-title-row">
-                <h3 class="bulk-card-title">Versioned Species Packages</h3>
-                <span v-if="bulkManifest" class="release-badge">v{{ bulkManifest.release }}</span>
-              </div>
-              <p class="bulk-card-subtitle">
-                Precomputed, checksum-verified archives for complete species-level retrieval.
-              </p>
-            </div>
-            <a
-              v-if="bulkManifestUrl"
-              :href="bulkManifestUrl"
-              class="manifest-link"
-              target="_blank"
-              rel="noopener"
-            >
-              Release manifest
-              <v-icon icon="mdi-open-in-new" size="16"></v-icon>
-            </a>
-          </div>
-
-          <div v-if="bulkLoading" class="bulk-state">
-            <v-progress-circular indeterminate size="22" width="2" color="primary"></v-progress-circular>
-            Loading release manifest
-          </div>
-          <div v-else-if="bulkError" class="bulk-state bulk-state--error">
-            <v-icon icon="mdi-alert-circle-outline" size="20"></v-icon>
-            {{ bulkError }}
-          </div>
-          <template v-else-if="bulkManifest">
-            <v-autocomplete
-              v-model="selectedBulkSpecies"
-              :items="bulkSpeciesOptions"
-              item-title="title"
-              item-value="value"
-              density="compact"
-              variant="outlined"
-              hide-details
-              class="bulk-species-select"
-              menu-icon="mdi-chevron-down"
-              placeholder="Select a species"
-            ></v-autocomplete>
-
-            <div v-if="selectedBulkPackage" class="bulk-package">
-              <div class="bulk-package-main">
-                <div class="bulk-package-icon"><v-icon icon="mdi-folder-zip-outline" size="25"></v-icon></div>
-                <div>
-                  <div class="bulk-package-name">{{ selectedBulkPackage.file_name }}</div>
-                  <div class="bulk-package-meta">
-                    <span class="bulk-count">{{ formatNumber(selectedBulkPackage.pa_site_count) }} Transcript-PAS records<MetricHelp :definition="COUNT_TERMS.transcriptPasRecords" /></span>
-                    <i class="bulk-meta-separator" aria-hidden="true"></i>
-                    <span class="bulk-count">{{ formatNumber(selectedBulkPackage.observation_count) }} sample observations<MetricHelp :definition="COUNT_TERMS.sampleObservations" /></span>
-                    <i class="bulk-meta-separator" aria-hidden="true"></i>
-                    {{ formatFileSize(selectedBulkPackage.size_bytes) }}
-                  </div>
-                </div>
-              </div>
-              <div class="bulk-package-actions">
-                <a :href="selectedBulkPackage.url" class="bulk-download-btn" download>
-                  <v-icon icon="mdi-download" size="19"></v-icon>
-                  Download ZIP
-                </a>
-              </div>
-            </div>
-
-            <div class="bulk-contents">
-              <span><v-icon icon="mdi-table" size="16"></v-icon> Transcript-PAS table</span>
-              <span><v-icon icon="mdi-format-list-bulleted" size="16"></v-icon> Sample observations</span>
-              <span><v-icon icon="mdi-dna" size="16"></v-icon> BED6 track</span>
-              <span><v-icon icon="mdi-file-document-check-outline" size="16"></v-icon> Release metadata</span>
-              <span title="SHA-256 checksums for the files inside the ZIP"><v-icon icon="mdi-shield-check-outline" size="16"></v-icon> SHA256SUMS</span>
-            </div>
-          </template>
-        </div>
-      </section>
-
-      <!-- E. API Access -->
+      <!-- D. API Access -->
       <div class="section-eyebrow mb-2">Programmatic Access</div>
       <div class="api-card">
         <div class="api-card-header">
@@ -244,7 +163,7 @@
           </router-link>
         </div>
 
-        <div class="lang-tabs">
+        <div v-if="downloadUrl" class="lang-tabs">
           <button
             v-for="lang in ['curl','python','r']"
             :key="lang"
@@ -256,16 +175,17 @@
           </button>
         </div>
 
-        <div class="code-block">
+        <div v-if="downloadUrl" class="code-block">
           <pre class="code-text"><code>{{ currentCommand }}</code></pre>
           <button class="copy-btn" @click="copyCommand">
             <v-icon :icon="copied ? 'mdi-check' : 'mdi-content-copy'" size="18"></v-icon>
             {{ copied ? 'Copied!' : 'Copy' }}
           </button>
         </div>
+        <p v-else class="api-card-subtitle mt-4">Select a dataset and species above to generate a download command.</p>
       </div>
 
-      <!-- F. Schema (collapsed) -->
+      <!-- E. Schema (collapsed) -->
       <div class="schema-section">
         <div class="dense-view-note">
           Data schema tables can be scrolled horizontally on small screens.
@@ -329,64 +249,11 @@ const apiLang = ref('curl')
 const copied = ref(false)
 const schemaOpen = ref(false)
 const schemaTab = ref('apa-sites')
-const downloading = ref(false)
-const bulkManifest = ref(null)
-const bulkManifestUrl = ref('')
-const bulkLoading = ref(true)
-const bulkError = ref('')
-const selectedBulkSpecies = ref('Human')
-
 const formatCompactCount = (value) => {
   const count = Number(value || 0)
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1)}M`
   if (count >= 1_000) return `${Math.round(count / 1_000)}K`
   return count.toLocaleString()
-}
-
-const formatNumber = (value) => Number(value || 0).toLocaleString()
-
-const formatFileSize = (value) => {
-  const bytes = Number(value || 0)
-  if (bytes >= 1024 ** 3) return `${(bytes / (1024 ** 3)).toFixed(2)} GB`
-  if (bytes >= 1024 ** 2) return `${(bytes / (1024 ** 2)).toFixed(1)} MB`
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${bytes} B`
-}
-
-
-const bulkSpeciesOptions = computed(() => (bulkManifest.value?.species || []).map(entry => ({
-  title: entry.display_name || formatSpeciesName(entry.species),
-  value: entry.species,
-})))
-
-const selectedBulkPackage = computed(() =>
-  bulkManifest.value?.species?.find(entry => entry.species === selectedBulkSpecies.value) || null
-)
-
-const loadBulkManifest = async () => {
-  bulkLoading.value = true
-  bulkError.value = ''
-  try {
-    const latestResponse = await fetch('/releases/latest.json', { cache: 'no-store' })
-    if (!latestResponse.ok) throw new Error(`Release pointer returned ${latestResponse.status}`)
-    const latest = await latestResponse.json()
-    if (!latest.manifest_url) throw new Error('Release pointer does not contain a manifest URL')
-
-    const manifestResponse = await fetch(latest.manifest_url, { cache: 'no-store' })
-    if (!manifestResponse.ok) throw new Error(`Release manifest returned ${manifestResponse.status}`)
-    bulkManifest.value = await manifestResponse.json()
-    bulkManifestUrl.value = latest.manifest_url
-
-    const species = bulkManifest.value?.species || []
-    if (!species.some(entry => entry.species === selectedBulkSpecies.value)) {
-      selectedBulkSpecies.value = species[0]?.species || ''
-    }
-  } catch (error) {
-    console.error('Failed to load bulk release manifest:', error)
-    bulkError.value = 'Bulk release packages are temporarily unavailable.'
-  } finally {
-    bulkLoading.value = false
-  }
 }
 
 const datasets = computed(() => [
@@ -429,28 +296,6 @@ const selectDataset = (item) => {
   if (!sampleFilterEnabled.value) selectedSamples.value = []
 }
 
-const triggerDownload = async () => {
-  if (!downloadUrl.value) return
-  downloading.value = true
-  try {
-    const response = await fetch(downloadUrl.value)
-    if (!response.ok) throw new Error(`Server returned ${response.status}`)
-    const blob = await response.blob()
-    const objectUrl = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = objectUrl
-    a.download = downloadFilename.value
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(objectUrl)
-  } catch (err) {
-    console.error('Download failed:', err)
-  } finally {
-    downloading.value = false
-  }
-}
-
 const BASE_URL = '/api/v1'
 
 const apiOrigin = computed(() => {
@@ -461,9 +306,9 @@ const apiOrigin = computed(() => {
 const apiDownloadBaseUrl = computed(() => `${apiOrigin.value}${BASE_URL}/download`)
 
 const downloadUrl = computed(() => {
-  if (!selectedDataset.value) return ''
+  if (!selectedDataset.value || !selectedSpecies.value) return ''
   const params = new URLSearchParams()
-  if (selectedSpecies.value) params.set('species', selectedSpecies.value)
+  params.set('species', selectedSpecies.value)
   if (sampleFilterEnabled.value) {
     selectedSamples.value.forEach(sample => params.append('sample', sample))
   }
@@ -506,7 +351,7 @@ const pythonCommand = computed(() => {
     selectedSamples.value.forEach(sample => paramItems.push(`("sample", "${sample}")`))
   }
   const paramBlock = paramItems.length ? `\nparams = [\n    ${paramItems.join(',\n    ')}\n]\n` : '\nparams = []\n'
-  return `import requests\n\nurl = "${apiDownloadBaseUrl.value}/${dataset}"${paramBlock}\nr = requests.get(url, params=params, timeout=120)\nr.raise_for_status()\nwith open("${filename}", "wb") as f:\n    f.write(r.content)`
+  return `import requests\n\nurl = "${apiDownloadBaseUrl.value}/${dataset}"${paramBlock}\nwith requests.get(url, params=params, stream=True, timeout=120) as r:\n    r.raise_for_status()\n    with open("${filename}", "wb") as f:\n        for chunk in r.iter_content(chunk_size=65536):\n            f.write(chunk)`
 })
 
 const rCommand = computed(() => {
@@ -516,13 +361,14 @@ const rCommand = computed(() => {
   if (selectedDataset.value?.formats.length > 1) paramLines.push(`    format = "${selectedFormat.value}",`)
   if (selectedSpecies.value) paramLines.push(`    species = "${selectedSpecies.value}",`)
   if (sampleFilterEnabled.value && selectedSamples.value.length) {
-    paramLines.push(`    sample = c(${selectedSamples.value.map(sample => `"${sample}"`).join(', ')}),`)
+    selectedSamples.value.forEach(sample => paramLines.push(`    sample = "${sample}",`))
   }
-  const paramBlock = paramLines.length ? `\nparams <- list(\n${paramLines.join('\n')}\n)\n` : '\nparams <- list()\n'
-  return `library(httr)\n\nurl <- "${apiDownloadBaseUrl.value}/${dataset}"${paramBlock}\nresponse <- GET(url, query = params, timeout(120))\nstop_for_status(response)\nwriteBin(content(response, "raw"), "${filename}")`
+  const paramBlock = paramLines.length ? `\nparams <- list(\n${paramLines.join('\n').replace(/,$/, '')}\n)\n` : '\nparams <- list()\n'
+  return `library(httr)\n\nurl <- "${apiDownloadBaseUrl.value}/${dataset}"${paramBlock}\nresponse <- GET(url, query = params,\n                write_disk("${filename}", overwrite = TRUE), timeout(120))\nstop_for_status(response)`
 })
 
 const currentCommand = computed(() => {
+  if (!downloadUrl.value) return ''
   if (apiLang.value === 'curl') return curlCommand.value
   if (apiLang.value === 'python') return pythonCommand.value
   return rCommand.value
@@ -538,6 +384,7 @@ const sampleFilterEnabled = computed(() =>
 )
 
 const sampleSelectionLabel = computed(() => {
+  if (!selectedSamples.value.length) return 'All samples'
   if (selectedSamples.value.length === 1) {
     return formatSampleName(selectedSamples.value[0])
   }
@@ -552,7 +399,7 @@ const normalizedSampleKey = (sample) =>
 const sampleOptions = computed(() => {
   const seen = new Set()
   return sampleList.value
-    .filter(sample => !selectedSpecies.value || sample.species === selectedSpecies.value)
+    .filter(sample => sample.species === selectedSpecies.value)
     .filter(sample => {
       const key = normalizedSampleKey(sample)
       if (seen.has(key)) return false
@@ -619,7 +466,6 @@ const schemas = [
 const currentSchema = computed(() => schemas.find(s => s.id === schemaTab.value)?.fields || [])
 
 onMounted(async () => {
-  loadBulkManifest()
   try {
     const [stats, species, samples] = await Promise.all([
       apiService.getDetailedStats(),
@@ -667,6 +513,13 @@ watch(sampleFilterEnabled, (enabled) => {
 .download-page {
   min-height: 100vh;
   background-color: #f8fafc;
+}
+
+.scope-help {
+  margin: 0 0 12px;
+  color: #64748b;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 .hero-section {
@@ -1025,73 +878,16 @@ watch(sampleFilterEnabled, (enabled) => {
   background: #0b686c !important;
 }
 
-.bulk-section {
-  scroll-margin-top: 88px;
-  margin-bottom: 32px;
-}
-
-.bulk-card {
-  padding: 24px 28px 26px;
-  background: #fff;
-  border: 1px solid #dbe3ea;
-  border-radius: 24px;
-  box-shadow: none;
-}
-
-.bulk-card-header,
-.bulk-title-row,
-.bulk-package,
-.bulk-package-main,
-.bulk-package-actions,
-.bulk-contents,
 .api-card-header,
-.api-reference-link,
-.manifest-link,
-.bulk-download-btn,
-.bulk-state {
+.api-reference-link {
   display: flex;
   align-items: center;
 }
 
-.bulk-card-header,
-.bulk-package,
 .api-card-header {
   justify-content: space-between;
 }
 
-.bulk-card-header {
-  gap: 20px;
-  margin-bottom: 20px;
-}
-
-.bulk-title-row {
-  gap: 10px;
-}
-
-.bulk-card-title {
-  margin: 0;
-  color: #1e293b;
-  font-size: 1.2rem;
-  font-weight: 700;
-}
-
-.bulk-card-subtitle {
-  margin: 5px 0 0;
-  color: #64748b;
-  font-size: 0.85rem;
-}
-
-.release-badge {
-  padding: 3px 8px;
-  color: #0d7377;
-  background: #effafa;
-  border: 1px solid #c9e7e5;
-  border-radius: 7px;
-  font-size: 0.72rem;
-  font-weight: 700;
-}
-
-.manifest-link,
 .api-reference-link {
   gap: 6px;
   flex: 0 0 auto;
@@ -1101,124 +897,8 @@ watch(sampleFilterEnabled, (enabled) => {
   text-decoration: none;
 }
 
-.manifest-link:hover,
 .api-reference-link:hover {
   color: #0a5c5f;
-}
-
-.bulk-state {
-  gap: 10px;
-  min-height: 82px;
-  justify-content: center;
-  color: #64748b;
-}
-
-.bulk-state--error {
-  color: #b45309;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 12px;
-}
-
-.bulk-species-select {
-  max-width: 460px;
-  margin-bottom: 18px;
-}
-
-.bulk-species-select :deep(.v-field) {
-  min-height: 44px;
-  background: #fff;
-  border: 1px solid #dbe3ea;
-  border-radius: 12px;
-}
-
-.bulk-species-select :deep(.v-field__outline) {
-  color: transparent;
-}
-
-.bulk-package {
-  gap: 18px;
-  padding: 18px 20px;
-  background: #f8fbfb;
-  border: 1px solid #d8e9e7;
-  border-radius: 16px;
-}
-
-.bulk-package-main {
-  min-width: 0;
-  gap: 13px;
-}
-
-.bulk-package-icon {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  flex: 0 0 auto;
-  place-items: center;
-  color: #0d7377;
-  background: #dff5f4;
-  border-radius: 12px;
-}
-
-.bulk-package-name {
-  color: #1e293b;
-  font-family: var(--aa-font-mono);
-  font-size: 0.86rem;
-  font-weight: 650;
-  overflow-wrap: anywhere;
-}
-
-.bulk-package-meta {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-top: 6px;
-  color: #64748b;
-  font-size: 0.78rem;
-  flex-wrap: wrap;
-}
-
-.bulk-count { display: inline-flex; align-items: center; }
-.bulk-meta-separator {
-  width: 3px;
-  height: 3px;
-  flex-shrink: 0;
-  background: #94a3b8;
-  border-radius: 50%;
-}
-
-.bulk-package-actions {
-  flex: 0 0 auto;
-  gap: 14px;
-}
-
-.bulk-download-btn {
-  gap: 7px;
-  padding: 10px 16px;
-  color: #fff;
-  background: #0d7377;
-  border-radius: 10px;
-  font-size: 0.82rem;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.bulk-download-btn:hover {
-  background: #0a5c5f;
-}
-
-.bulk-contents {
-  flex-wrap: wrap;
-  gap: 10px 18px;
-  margin-top: 16px;
-  color: #64748b;
-  font-size: 0.78rem;
-}
-
-.bulk-contents span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
 }
 
 .api-card {
@@ -1458,7 +1138,6 @@ watch(sampleFilterEnabled, (enabled) => {
   }
 
   .scope-panel,
-  .bulk-card,
   .api-card,
   .download-action-panel {
     padding: 18px;
@@ -1488,26 +1167,9 @@ watch(sampleFilterEnabled, (enabled) => {
     width: 100%;
   }
 
-  .bulk-card-header,
-  .bulk-package,
   .api-card-header {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .bulk-species-select {
-    max-width: none;
-  }
-
-  .bulk-package-actions {
-    width: 100%;
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .bulk-download-btn {
-    justify-content: center;
-    width: 100%;
   }
 
   .lang-tabs {

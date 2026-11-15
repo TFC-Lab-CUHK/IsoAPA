@@ -34,8 +34,8 @@
           <div class="api-card-icon"><v-icon icon="mdi-package-variant-closed" size="24" /></div>
           <div>
             <div class="api-label">Complete species data</div>
-            <router-link to="/download#bulk-species" class="api-inline-link">Use versioned bulk packages</router-link>
-            <p>Precomputed archives are preferred for complete species-level exports.</p>
+            <router-link to="/download" class="api-inline-link">Choose a species to download</router-link>
+            <p>Leave the sample filter empty to include all samples in the selected species.</p>
           </div>
         </article>
       </section>
@@ -159,10 +159,10 @@
             <span>Verify extracted files</span>
             <code>sha256sum -c SHA256SUMS</code>
           </div>
-          <router-link to="/download#bulk-species" class="bulk-reference-action">
-            Browse species packages
+          <a href="/releases/latest.json" class="bulk-reference-action" target="_blank" rel="noopener">
+            Open latest release pointer
             <v-icon icon="mdi-arrow-right" size="18" />
-          </router-link>
+          </a>
         </div>
       </section>
     </v-container>
@@ -193,6 +193,12 @@ const commonSpecies = {
   type: 'string',
   required: false,
   description: 'Stable identifier returned by /species. Search also accepts scientific and curated common names, such as Homo sapiens, human, Zea mays, or maize.'
+}
+
+const downloadSpecies = {
+  ...commonSpecies,
+  required: true,
+  description: 'One exact identifier returned by /species, such as Human. Missing, empty, unknown, or partial identifiers return HTTP 422.'
 }
 
 const endpointGroups = [
@@ -341,14 +347,14 @@ const endpointGroups = [
     id: 'downloads',
     title: 'Filtered downloads',
     icon: 'mdi-download-outline',
-    description: 'Generate filtered exports interactively. Use bulk release files for complete species datasets.',
+    description: 'Every dynamic export requires one species and streams the file as it is generated. Omit sample to include all samples in that species; repeat sample to select specific groups.',
     endpoints: [
       {
         path: '/api/v1/download/apa-sites',
         summary: 'Download sample observations as CSV or TSV: one record for a transcript-associated PAS in a sample group.',
         parameters: [
-          commonSpecies,
-          { name: 'sample', type: 'repeatable string', required: false, description: 'Repeat this parameter to include multiple sample groups.' },
+          downloadSpecies,
+          { name: 'sample', type: 'repeatable string', required: false, description: 'Exact sample identifier from /samples for the selected species. Omit to include all samples; repeat to select multiple groups.' },
           { name: 'gene_name', type: 'string', required: false, description: 'Restrict output to matching gene names.' },
           { name: 'format', type: 'string', required: false, description: 'csv, tsv, or txt. Default: csv.' }
         ]
@@ -356,13 +362,13 @@ const endpointGroups = [
       {
         path: '/api/v1/download/bed',
         summary: 'Download representative PA-site coordinates in BED6 format.',
-        parameters: [commonSpecies]
+        parameters: [downloadSpecies]
       },
       {
         path: '/api/v1/download/genes',
         summary: 'Download gene-level identifiers, coordinates, transcript counts, and PA-site counts.',
         parameters: [
-          commonSpecies,
+          downloadSpecies,
           { name: 'format', type: 'string', required: false, description: 'csv, tsv, or txt. Default: csv.' }
         ]
       },
@@ -370,7 +376,7 @@ const endpointGroups = [
         path: '/api/v1/download/transcripts',
         summary: 'Download transcript identifiers, genomic context, and PA-site counts.',
         parameters: [
-          commonSpecies,
+          downloadSpecies,
           { name: 'format', type: 'string', required: false, description: 'csv, tsv, or txt. Default: csv.' }
         ]
       },
@@ -378,8 +384,8 @@ const endpointGroups = [
         path: '/api/v1/download/abundance-matrix',
         summary: COUNT_TERMS.abundanceMatrix.text,
         parameters: [
-          commonSpecies,
-          { name: 'sample', type: 'repeatable string', required: false, description: 'Repeat this parameter to include multiple sample groups.' },
+          downloadSpecies,
+          { name: 'sample', type: 'repeatable string', required: false, description: 'Exact sample identifier from /samples for the selected species. Omit to include all samples; repeat to select multiple groups.' },
           { name: 'format', type: 'string', required: false, description: 'tsv or csv. Default: tsv.' }
         ]
       }

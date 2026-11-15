@@ -269,10 +269,10 @@
                     </div>
                   </div>
                   <p class="guide-p mt-4 text-body-2">
-                    Use the species scope selector for filtered exports, or retrieve a versioned ZIP archive for a complete species dataset. The public API reference documents query parameters, coordinate conventions, response formats, and reproducible examples.
+                    Select one species for each export. Leave Samples empty to download all samples in that species, or select samples to restrict the export. A species is required for both browser and API downloads. The public API reference documents query parameters, coordinate conventions, response formats, and reproducible examples.
                   </p>
                   <div class="guide-resource-links">
-                    <router-link to="/download#bulk-species">Browse species packages</router-link>
+                    <router-link to="/download">Choose a species to download</router-link>
                     <router-link to="/api-reference">Open API reference</router-link>
                   </div>
                 </template>

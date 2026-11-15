@@ -18,9 +18,17 @@
 
 ## Data Access
 
-The [Download page](https://isoapa.sls.cuhk.edu.hk/download) provides PAS tables, genome-browser BED tracks, sample abundance matrices and complete species packages. Programmatic access is described in the [API reference](https://isoapa.sls.cuhk.edu.hk/api-reference).
+The [Download page](https://isoapa.sls.cuhk.edu.hk/download) provides PAS tables, genome-browser BED tracks and sample abundance matrices for a selected species. Leave the sample filter empty to include all samples in that species, or select samples to restrict the export. All dynamic exports require one exact species identifier from `/api/v1/species` (for example, `species=Human`); missing or invalid identifiers return HTTP 422. Files stream in batches. Programmatic access and versioned species archives are described in the [API reference](https://isoapa.sls.cuhk.edu.hk/api-reference).
 
 Field definitions, usage guidance and genome annotation references are available on the [Help page](https://isoapa.sls.cuhk.edu.hk/help).
+
+## API Resource Protection
+
+The production NGINX configuration limits dynamic exports to two concurrent downloads per IP and four across the frontend instance; excess requests return HTTP 429. Statistics requests have a separate concurrency limit of eight. Existing request-rate limits also apply. Static release downloads share the per-IP download limit but do not occupy dynamic export slots.
+
+Expensive statistics are cached per species for the backend process lifetime, with concurrent cache misses serialized. Species identifiers are validated before caching. Transcript multiplicity is aggregated in SQL, returning at most six bucket rows instead of loading every transcript into Python. Production requests never rebuild a missing `stats_cache.json`; generate that file offline with `python -m app.services.precompute_stats` from `backend/`. Restart the backend after replacing the database or statistics file.
+
+The Swarm stack caps the backend at 2 CPUs and 2 GiB of memory by default. Override `ISOAPA_BACKEND_CPUS` and `ISOAPA_BACKEND_MEMORY` when deploying the stack if needed. See [incremental deployment instructions](docs/api-protection-deployment.md) to apply these changes without transferring the database or rebuilding a deployment package.
 
 ## Citation
 

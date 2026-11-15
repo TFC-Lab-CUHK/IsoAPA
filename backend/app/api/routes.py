@@ -1,16 +1,15 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
-from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func, case, or_
+from sqlalchemy import func, case, or_, select
 from typing import List, Optional
+from threading import Lock
 import os
 import json
-import csv
-import io
 import re
 from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from app.config import settings
 from app.models.database import (
     get_db,
     Gene,
@@ -24,6 +23,9 @@ from app.models.database import (
     TranscriptSearchSample,
 )
 from app.services.search_index import ensure_search_index
+from app.services.downloads import (
+    DownloadResponse, stream_query_rows, stream_delimited, stream_bed, stream_abundance_matrix,
+)
 from app.services.precompute_stats import STATS_CACHE_FILE, build_stats_cache
 from app.services.pas_motif_stats import PRIMARY_PAS_TYPES, summarize_pas_motif_rows
 from app.services.pas_evidence_stats import build_pas_evidence_summary
@@ -44,6 +46,9 @@ _BED12_INDEX_CACHE: dict = {}
 _TAXID_CACHE: dict = {}
 _GENE_SUMMARY_CACHE: dict = {}
 _STATS_CACHE: dict | None = None
+_STATS_CACHE_LOCK = Lock()
+_STATS_QUERY_CACHE: dict = {}
+_STATS_QUERY_LOCK = Lock()
 
 _KNOWN_SPECIES_TAXIDS = {
     "Human": "9606",
@@ -242,14 +247,41 @@ def _gene_comparison_summaries(db: Session, gene_ids: list[int]) -> list[dict]:
 
 def _load_stats_cache() -> dict:
     global _STATS_CACHE
-    if _STATS_CACHE is not None:
+    with _STATS_CACHE_LOCK:
+        if _STATS_CACHE is not None:
+            return _STATS_CACHE
+        if os.path.isfile(STATS_CACHE_FILE):
+            with open(STATS_CACHE_FILE) as fh:
+                _STATS_CACHE = json.load(fh)
+        elif settings.is_production:
+            # Rebuilding the entire atlas belongs in an offline maintenance job.
+            raise HTTPException(status_code=503, detail="Statistics cache is unavailable")
+        else:
+            _STATS_CACHE = build_stats_cache(STATS_CACHE_FILE)
         return _STATS_CACHE
-    if os.path.exists(STATS_CACHE_FILE):
-        with open(STATS_CACHE_FILE) as fh:
-            _STATS_CACHE = json.load(fh)
-    else:
-        _STATS_CACHE = build_stats_cache(STATS_CACHE_FILE)
-    return _STATS_CACHE
+
+
+def _require_stats_species(db: Session, species: Optional[str]) -> Optional[str]:
+    if species is None:
+        return None
+    match = db.query(Species.name).filter(Species.name == species).first()
+    if match is None:
+        raise HTTPException(status_code=404, detail="Species not found")
+    return match.name
+
+
+def _cached_statistic(kind: str, species: Optional[str], build):
+    # The production database is immutable. Restart after a data release to
+    # invalidate these results. Callers validate species first, so the key space
+    # is bounded by the number of database species, rather than user input.
+    # Serialize cache misses to avoid duplicate work and simultaneous large scans.
+    key = (kind, species)
+    if key in _STATS_QUERY_CACHE:
+        return _STATS_QUERY_CACHE[key]
+    with _STATS_QUERY_LOCK:
+        if key not in _STATS_QUERY_CACHE:
+            _STATS_QUERY_CACHE[key] = build()
+        return _STATS_QUERY_CACHE[key]
 
 
 def _chunks(values: list[int], size: int = 800):
@@ -320,31 +352,6 @@ def _prefix_upper_bound(term: str) -> str:
     return f"{term[:-1]}{chr(ord(term[-1]) + 1)}"
 
 
-def _write_apa_site_download_row(writer, row, sample_detail: dict | None, delimiter_selected_samples: list[str]):
-    cluster_range = (
-        f"{row.cluster_start}:{row.cluster_end}"
-        if row.cluster_start is not None and row.cluster_end is not None
-        else ""
-    )
-    sample_name = (sample_detail or {}).get("sample_name", "")
-    if delimiter_selected_samples and sample_name not in delimiter_selected_samples:
-        return
-    writer.writerow(
-        {
-            "gene_name": row.gene_name or "",
-            "gene_id": row.gene_id or "",
-            "transcript_id": row.transcript_id or "",
-            "site_id": row.unified_id or "",
-            "cluster_range": cluster_range,
-            "representative_position": row.mode_site_position or "",
-            "sample_site_position": (sample_detail or {}).get("original_site_position", ""),
-            "site_abundance": (sample_detail or {}).get("site_abundance", ""),
-            "species": _format_species_name(row.species),
-            "sample": _format_sample_name(sample_name),
-        }
-    )
-
-
 def _multiplicity_bucket(count: int) -> str:
     if count >= 5:
         return "5+"
@@ -360,19 +367,21 @@ def _build_multiplicity_stats(db: Session, species: Optional[str] = None) -> dic
     if species:
         query = query.filter(Species.name == species)
 
-    rows = query.group_by(Transcript.id).all()
+    counts = query.group_by(Transcript.id).subquery()
+    bucket = case((counts.c.apa_count >= 5, 5), else_=counts.c.apa_count)
+    rows = (
+        db.query(bucket.label("bucket"), func.count())
+        .select_from(counts)
+        .group_by(bucket)
+        .all()
+    )
     buckets = {"0": 0, "1": 0, "2": 0, "3": 0, "4": 0, "5+": 0}
-    single_count = 0
-    multi_count = 0
-    for _, count in rows:
-        count = int(count or 0)
-        buckets[_multiplicity_bucket(count)] += 1
-        if count == 1:
-            single_count += 1
-        if count >= 2:
-            multi_count += 1
+    for site_count, transcript_count in rows:
+        buckets[_multiplicity_bucket(int(site_count or 0))] = int(transcript_count)
 
-    total = len(rows)
+    single_count = buckets["1"]
+    multi_count = sum(buckets[key] for key in ("2", "3", "4", "5+"))
+    total = sum(buckets.values())
     return {
         "buckets": buckets,
         "total": total,
@@ -1579,23 +1588,25 @@ def get_detailed_stats(db: Session = Depends(get_db)):
 
 @router.get("/stats/multiplicity")
 def get_multiplicity_stats(
-    species: Optional[str] = None,
+    species: Optional[str] = Query(None, min_length=1, max_length=100),
     db: Session = Depends(get_db),
 ):
     """Get PA site multiplicity per transcript, optionally scoped to one species."""
-    return _build_multiplicity_stats(db, species)
+    species = _require_stats_species(db, species)
+    return _cached_statistic("multiplicity", species, lambda: _build_multiplicity_stats(db, species))
 
 
 @router.get("/stats/pas-motifs")
 def get_pas_motif_stats(
-    species: Optional[str] = None,
+    species: Optional[str] = Query(None, min_length=1, max_length=100),
     db: Session = Depends(get_db),
 ):
     """Get PAS motif distribution, optionally scoped to one species."""
+    species = _require_stats_species(db, species)
     cached = _cached_pas_motif_stats(species)
     if cached is not None:
         return cached
-    return _build_pas_motif_stats(db, species)
+    return _cached_statistic("pas-motifs", species, lambda: _build_pas_motif_stats(db, species))
 
 
 @router.get("/stats/pas-evidence")
@@ -1610,400 +1621,192 @@ def get_pas_evidence_stats(
     cached = _load_stats_cache().get("detailed", {}).get("pas_evidence_by_species", {})
     if species_obj.name in cached:
         return cached[species_obj.name]
-    return build_pas_evidence_summary(db, species_obj)
+    return _cached_statistic("pas-evidence", species_obj.name, lambda: build_pas_evidence_summary(db, species_obj))
 
 
 @router.get("/stats/top-genes")
 def get_top_gene_stats(
-    species: Optional[str] = None,
+    species: Optional[str] = Query(None, min_length=1, max_length=100),
     db: Session = Depends(get_db),
 ):
     """Get top genes by distinct PA site count, optionally scoped to one species."""
-    return _build_top_gene_stats(db, species)
+    species = _require_stats_species(db, species)
+    return _cached_statistic("top-genes", species, lambda: _build_top_gene_stats(db, species))
+
+
+def _require_download_species(db: Session, species: str):
+    identifier = species.strip()
+    match = db.query(Species.id, Species.name).filter(Species.name == identifier).first() if identifier else None
+    if match is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Download requires one exact species identifier from /api/v1/species (e.g. Human).",
+        )
+    return match.id, match.name
+
+
+def _download_response(content, filename: str, format: str):
+    media_type = {
+        "csv": "text/csv",
+        "bed": "text/plain",
+    }.get(format, "text/tab-separated-values")
+    return DownloadResponse(
+        content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{_download_filename(filename)}"',
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/download/apa-sites")
 def download_apa_sites(
-    species: Optional[str] = None,
+    species: str = Query(..., min_length=1, description="One exact identifier from /species, e.g. Human."),
     sample: Optional[List[str]] = Query(None),
     gene_name: Optional[str] = None,
     format: str = Query("csv", pattern="^(csv|tsv|txt)$"),
     db: Session = Depends(get_db),
 ):
-    """Download PA site observations in sample-resolved format."""
-    selected_samples = [s for s in (sample or []) if s]
-    delimiter = "," if format == "csv" else "\t"
-    output = io.StringIO()
-
-    headers = [
-        "gene_name",
-        "gene_id",
-        "transcript_id",
-        "site_id",
-        "cluster_range",
-        "representative_position",
-        "sample_site_position",
-        "site_abundance",
-        "species",
-        "sample",
-    ]
-    writer = csv.DictWriter(output, fieldnames=headers, delimiter=delimiter)
-    writer.writeheader()
-
-    query = (
-        db.query(
-            Gene.gene_name,
-            Gene.gene_id,
-            Transcript.transcript_id,
-            APASite.unified_id,
-            APASite.cluster_start,
-            APASite.cluster_end,
-            APASite.mode_site_position,
-            Species.name.label("species"),
-            Sample.name.label("sample_name"),
-            Sample.sample_type,
-            APASiteSample.sample_order,
-            APASiteSample.original_site_position,
-            APASiteSample.site_abundance.label("sample_site_abundance"),
+    """Stream sample-resolved PA site observations for one required species."""
+    species_id, species_name = _require_download_species(db, species)
+    species_label = _format_species_name(species_name)
+    statement = (
+        select(
+            Gene.gene_name, Gene.gene_id, Transcript.transcript_id,
+            APASite.unified_id, APASite.cluster_start, APASite.cluster_end,
+            APASite.mode_site_position, Sample.name.label("sample_name"),
+            APASiteSample.original_site_position, APASiteSample.site_abundance,
         )
-        .select_from(Gene)
-        .join(Transcript, Gene.id == Transcript.gene_id)
-        .join(APASite, Transcript.id == APASite.transcript_id)
+        .select_from(APASite)
+        .join(Transcript, APASite.transcript_id == Transcript.id)
+        .join(Gene, Transcript.gene_id == Gene.id)
         .join(APASiteSample, APASiteSample.apa_site_id == APASite.id)
         .join(Sample, APASiteSample.sample_id == Sample.id)
-        .join(Species, APASite.species_id == Species.id)
+        .where(APASite.species_id == species_id)
+        .order_by(Transcript.transcript_id, APASite.unified_id, APASiteSample.sample_order)
     )
-    if species:
-        query = query.filter(Species.name.ilike(f"%{species}%"))
     if gene_name:
-        query = query.filter(Gene.gene_name.ilike(f"%{gene_name}%"))
+        statement = statement.where(Gene.gene_name.ilike(f"%{gene_name}%"))
+    selected_samples = [name for name in (sample or []) if name]
     if selected_samples:
-        query = query.filter(Sample.name.in_(selected_samples))
+        statement = statement.where(Sample.name.in_(selected_samples))
 
-    query = query.order_by(
-        Transcript.transcript_id,
-        APASite.unified_id,
-        APASiteSample.sample_order,
-    )
-
-    for row in query.yield_per(5000):
-        _write_apa_site_download_row(
-            writer,
-            row,
-            {
-                "sample_name": row.sample_name,
-                "sample_type": row.sample_type,
-                "original_site_position": row.original_site_position,
-                "site_abundance": row.sample_site_abundance,
-            },
-            selected_samples,
+    def row_values(row):
+        cluster_range = (
+            f"{row.cluster_start}:{row.cluster_end}"
+            if row.cluster_start is not None and row.cluster_end is not None else ""
         )
+        return [
+            row.gene_name or "", row.gene_id or "", row.transcript_id or "",
+            row.unified_id or "", cluster_range, row.mode_site_position or "",
+            row.original_site_position, row.site_abundance, species_label,
+            _format_sample_name(row.sample_name),
+        ]
 
-    output.seek(0)
-    media_type = "text/csv" if format == "csv" else "text/tab-separated-values"
-    filename = f"apa_sites.{format}"
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    headers = [
+        "gene_name", "gene_id", "transcript_id", "site_id", "cluster_range",
+        "representative_position", "sample_site_position", "site_abundance", "species", "sample",
+    ]
+    rows = stream_query_rows(db.get_bind(), statement, row_values)
+    content = stream_delimited(headers, rows, "," if format == "csv" else "\t")
+    return _download_response(content, f"apa_sites.{format}", format)
 
 
 @router.get("/download/genes")
 def download_genes(
-    species: Optional[str] = None,
+    species: str = Query(..., min_length=1, description="One exact identifier from /species, e.g. Human."),
     format: str = Query("csv", pattern="^(csv|tsv|txt)$"),
     db: Session = Depends(get_db),
 ):
-    """Download genes data."""
-    query = (
-        db.query(
-            Gene.gene_name,
-            Gene.gene_id,
-            Gene.chromosome,
-            Gene.strand,
-            Species.name.label("species"),
+    """Stream gene data for one required species."""
+    species_id, species_name = _require_download_species(db, species)
+    species_label = _format_species_name(species_name)
+    statement = (
+        select(
+            Gene.gene_name, Gene.gene_id, Gene.chromosome, Gene.strand,
             func.count(Transcript.id).label("transcript_count"),
             func.count(APASite.id).label("apa_site_count"),
         )
-        .join(Species, Gene.species_id == Species.id)
+        .select_from(Gene)
         .outerjoin(Transcript, Transcript.gene_id == Gene.id)
         .outerjoin(APASite, APASite.transcript_id == Transcript.id)
-        .group_by(
-            Gene.gene_name, Gene.gene_id, Gene.chromosome, Gene.strand, Species.name
-        )
+        .where(Gene.species_id == species_id)
+        .group_by(Gene.gene_name, Gene.gene_id, Gene.chromosome, Gene.strand)
     )
-
-    if species:
-        query = query.filter(Species.name.ilike(f"%{species}%"))
-
-    results = query.all()
-
-    delimiter = "," if format == "csv" else "\t"
-    output = io.StringIO()
-
-    headers = [
-        "gene_name",
-        "gene_id",
-        "chromosome",
-        "strand",
-        "species",
-        "transcript_count",
-        "apa_site_count",
-    ]
-    writer = csv.DictWriter(output, fieldnames=headers, delimiter=delimiter)
-    writer.writeheader()
-
-    for row in results:
-        writer.writerow(
-            {
-                "gene_name": row.gene_name or "",
-                "gene_id": row.gene_id or "",
-                "chromosome": row.chromosome or "",
-                "strand": row.strand or "",
-                "species": _format_species_name(row.species),
-                "transcript_count": row.transcript_count or 0,
-                "apa_site_count": row.apa_site_count or 0,
-            }
-        )
-
-    output.seek(0)
-
-    media_type = "text/csv" if format == "csv" else "text/tab-separated-values"
-    filename = f"genes.{format}"
-
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    rows = stream_query_rows(db.get_bind(), statement, lambda row: [
+        row.gene_name or "", row.gene_id or "", row.chromosome or "", row.strand or "",
+        species_label, row.transcript_count or 0, row.apa_site_count or 0,
+    ])
+    headers = ["gene_name", "gene_id", "chromosome", "strand", "species", "transcript_count", "apa_site_count"]
+    content = stream_delimited(headers, rows, "," if format == "csv" else "\t")
+    return _download_response(content, f"genes.{format}", format)
 
 
 @router.get("/download/transcripts")
 def download_transcripts(
-    species: Optional[str] = None,
+    species: str = Query(..., min_length=1, description="One exact identifier from /species, e.g. Human."),
     format: str = Query("csv", pattern="^(csv|tsv|txt)$"),
     db: Session = Depends(get_db),
 ):
-    """Download transcripts data."""
-    query = (
-        db.query(
-            Gene.gene_name,
-            Gene.gene_id,
-            Transcript.transcript_id,
-            Gene.chromosome,
-            Gene.strand,
-            Species.name.label("species"),
-            func.count(APASite.id).label("apa_site_count"),
+    """Stream transcript data for one required species."""
+    species_id, species_name = _require_download_species(db, species)
+    species_label = _format_species_name(species_name)
+    statement = (
+        select(
+            Gene.gene_name, Gene.gene_id, Transcript.transcript_id, Gene.chromosome,
+            Gene.strand, func.count(APASite.id).label("apa_site_count"),
         )
+        .select_from(Transcript)
         .join(Gene, Transcript.gene_id == Gene.id)
-        .join(Species, Transcript.species_id == Species.id)
         .outerjoin(APASite, APASite.transcript_id == Transcript.id)
-        .group_by(
-            Gene.gene_name,
-            Gene.gene_id,
-            Transcript.transcript_id,
-            Gene.chromosome,
-            Gene.strand,
-            Species.name,
-        )
+        .where(Transcript.species_id == species_id)
+        .group_by(Gene.gene_name, Gene.gene_id, Transcript.transcript_id, Gene.chromosome, Gene.strand)
     )
-
-    if species:
-        query = query.filter(Species.name.ilike(f"%{species}%"))
-
-    results = query.all()
-
-    delimiter = "," if format == "csv" else "\t"
-    output = io.StringIO()
-
-    headers = [
-        "gene_name",
-        "gene_id",
-        "transcript_id",
-        "chromosome",
-        "strand",
-        "species",
-        "apa_site_count",
-    ]
-    writer = csv.DictWriter(output, fieldnames=headers, delimiter=delimiter)
-    writer.writeheader()
-
-    for row in results:
-        writer.writerow(
-            {
-                "gene_name": row.gene_name or "",
-                "gene_id": row.gene_id or "",
-                "transcript_id": row.transcript_id or "",
-                "chromosome": row.chromosome or "",
-                "strand": row.strand or "",
-                "species": _format_species_name(row.species),
-                "apa_site_count": row.apa_site_count or 0,
-            }
-        )
-
-    output.seek(0)
-
-    media_type = "text/csv" if format == "csv" else "text/tab-separated-values"
-    filename = f"transcripts.{format}"
-
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    rows = stream_query_rows(db.get_bind(), statement, lambda row: [
+        row.gene_name or "", row.gene_id or "", row.transcript_id or "", row.chromosome or "",
+        row.strand or "", species_label, row.apa_site_count or 0,
+    ])
+    headers = ["gene_name", "gene_id", "transcript_id", "chromosome", "strand", "species", "apa_site_count"]
+    content = stream_delimited(headers, rows, "," if format == "csv" else "\t")
+    return _download_response(content, f"transcripts.{format}", format)
 
 
 @router.get("/download/bed")
 def download_bed(
-    species: Optional[str] = None,
+    species: str = Query(..., min_length=1, description="One exact identifier from /species, e.g. Human."),
     db: Session = Depends(get_db),
 ):
-    """Download PA sites as BED6 format for genome browser visualization (IGV, UCSC, JBrowse)."""
-    query = (
-        db.query(
-            Gene.chromosome,
-            APASite.mode_site_position,
-            APASite.unified_id,
-            Gene.strand,
-        )
+    """Stream BED6 PA-site coordinates for one required species."""
+    species_id, species_name = _require_download_species(db, species)
+    statement = (
+        select(Gene.chromosome, APASite.mode_site_position, APASite.unified_id, Gene.strand)
         .select_from(APASite)
         .join(Transcript, APASite.transcript_id == Transcript.id)
         .join(Gene, Transcript.gene_id == Gene.id)
-        .join(Species, APASite.species_id == Species.id)
+        .where(APASite.species_id == species_id)
     )
-
-    if species:
-        query = query.filter(Species.name.ilike(f"%{species}%"))
-
-    results = query.all()
-
-    output = io.StringIO()
-    output.write(
-        'track name="IsoAPA_PA_Sites" description="IsoAPA Polyadenylation Sites" useScore=0\n'
-    )
-
-    for row in results:
-        chrom = row.chromosome or "chrUnknown"
-        site_pos = int(row.mode_site_position) if row.mode_site_position else 0
-        chrom_start = max(0, site_pos - 1)  # BED is 0-based
-        chrom_end = site_pos               # half-open end
-        name = row.unified_id or "."
-        strand = row.strand or "."
-        output.write(f"{chrom}\t{chrom_start}\t{chrom_end}\t{name}\t.\t{strand}\n")
-
-    output.seek(0)
-    sp_suffix = f"_{_download_filename(species.lower().replace(' ', '_'))}" if species else ""
-    filename = _download_filename(f"isoapa_pa_sites{sp_suffix}.bed")
-
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/plain",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    content = stream_bed(db.get_bind(), statement)
+    filename = f"isoapa_pa_sites_{species_name.lower().replace(' ', '_')}.bed"
+    return _download_response(content, filename, "bed")
 
 
 @router.get("/download/abundance-matrix")
 def download_abundance_matrix(
-    species: Optional[str] = None,
+    species: str = Query(..., min_length=1, description="One exact identifier from /species, e.g. Human."),
     sample: Optional[List[str]] = Query(None),
     format: str = Query("tsv", pattern="^(csv|tsv)$"),
     db: Session = Depends(get_db),
 ):
-    """Download PA site × sample abundance matrix for differential APA analysis."""
-    delimiter = "," if format == "csv" else "\t"
-    selected_samples = sorted({s for s in (sample or []) if s})
-    sample_query = db.query(Sample.name).join(Species)
-    if species:
-        sample_query = sample_query.filter(Species.name.ilike(f"%{species}%"))
-    if selected_samples:
-        sample_query = sample_query.filter(Sample.name.in_(selected_samples))
-    sample_names = _dedupe_sample_names(
-        sorted({row[0] for row in sample_query.all()}, key=lambda value: _format_sample_name(value).lower())
+    """Stream a PA site × sample abundance matrix for one required species."""
+    species_id, species_name = _require_download_species(db, species)
+    content = stream_abundance_matrix(
+        db.get_bind(), species_id, _format_species_name(species_name),
+        sorted({name for name in (sample or []) if name}),
+        "," if format == "csv" else "\t", _format_sample_name,
     )
-
-    query = (
-        db.query(
-            APASite.unified_id,
-            Transcript.transcript_id,
-            Gene.gene_name,
-            Gene.chromosome,
-            Gene.strand,
-            APASite.mode_site_position,
-            APASite.id.label("apa_site_id"),
-            Species.name.label("species"),
-        )
-        .select_from(APASite)
-        .join(Transcript, APASite.transcript_id == Transcript.id)
-        .join(Gene, Transcript.gene_id == Gene.id)
-        .join(Species, APASite.species_id == Species.id)
-    )
-
-    if species:
-        query = query.filter(Species.name.ilike(f"%{species}%"))
-    if selected_samples:
-        sample_filter = _sample_site_filter(db, selected_samples)
-        if sample_filter is not None:
-            query = query.filter(sample_filter)
-
-    results = query.all()
-    sample_details_by_site = _sample_detail_rows(db, [row.apa_site_id for row in results])
-
-    output = io.StringIO()
-    writer = csv.writer(output, delimiter=delimiter)
-    display_sample_names = [_format_sample_name(s) for s in sample_names]
-    sample_value_cols = [
-        col
-        for display_name in display_sample_names
-        for col in (f"{display_name}_count", f"{display_name}_relative_abundance")
-    ]
-    header_cols = [
-        "site_id", "transcript_id", "gene_name",
-        "chromosome", "strand", "species",
-    ] + sample_value_cols
-    writer.writerow(header_cols)
-
-    for row in results:
-        sample_values: dict = {
-            _sample_display_key(s): {"count": 0, "relative_abundance": 0}
-            for s in sample_names
-        }
-        for sd in sample_details_by_site.get(row.apa_site_id, []):
-            sname = sd.get("sample_name", "")
-            sample_key = _sample_display_key(sname)
-            if sample_key in sample_values:
-                sample_values[sample_key]["count"] += int(sd.get("site_count", 0) or 0)
-                sample_values[sample_key]["relative_abundance"] = sd.get("site_abundance", 0) or 0
-
-        row_vals = [
-            row.unified_id or "",
-            row.transcript_id or "",
-            row.gene_name or "",
-            row.chromosome or "",
-            row.strand or "",
-            _format_species_name(row.species),
-        ] + [
-            str(value)
-            for s in sample_names
-            for sample_key in [_sample_display_key(s)]
-            for value in (
-                sample_values[sample_key]["count"],
-                sample_values[sample_key]["relative_abundance"],
-            )
-        ]
-        writer.writerow(row_vals)
-
-    output.seek(0)
-    sp_suffix = f"_{_download_filename(species.lower().replace(' ', '_'))}" if species else ""
-    extension = "csv" if format == "csv" else "tsv"
-    filename = _download_filename(f"isoapa_abundance_matrix{sp_suffix}.{extension}")
-    media_type = "text/csv" if format == "csv" else "text/tab-separated-values"
-
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    filename = f"isoapa_abundance_matrix_{species_name.lower().replace(' ', '_')}.{format}"
+    return _download_response(content, filename, format)
 
 
 # ---------------------------------------------------------------------------
